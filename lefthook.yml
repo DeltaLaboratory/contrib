@@ -1,0 +1,6 @@
+pre-commit:
+  jobs:
+    - name: format code
+      run: go fmt ./...
+    - name: golangci-lint
+      run: golangci-lint run
