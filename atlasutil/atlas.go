@@ -15,7 +15,7 @@ import (
 
 const atlasVersion = "0.36.0"
 
-func downloadAtlas(ctx context.Context, atlasPath string) error {
+func download(ctx context.Context, atlasPath string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("https://release.ariga.io/atlas/atlas-%s-%s-v%s", runtime.GOOS, runtime.GOARCH, atlasVersion), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -52,7 +52,7 @@ func downloadAtlas(ctx context.Context, atlasPath string) error {
 	return nil
 }
 
-func migrateDatabase(ctx context.Context, uri string, baseline string) error {
+func Migrate(ctx context.Context, uri string, baseline string) error {
 	cacheDir, err := os.UserCacheDir()
 	if err != nil {
 		return fmt.Errorf("failed to get cache directory: %w", err)
@@ -65,7 +65,7 @@ func migrateDatabase(ctx context.Context, uri string, baseline string) error {
 
 	atlasPath := filepath.Join(atlasDir, fmt.Sprintf("atlas-%s-%s-v%s", runtime.GOOS, runtime.GOARCH, atlasVersion))
 	if _, err := os.Stat(atlasPath); os.IsNotExist(err) {
-		if err := downloadAtlas(ctx, atlasPath); err != nil {
+		if err := download(ctx, atlasPath); err != nil {
 			return fmt.Errorf("failed to download atlas: %w", err)
 		}
 	}
@@ -87,7 +87,7 @@ func migrateDatabase(ctx context.Context, uri string, baseline string) error {
 
 	// First try without baseline
 	//nolint:gosec // false positive for G204
-	cmd := exec.Command(baseCommand[0], baseCommand[1:]...)
+	cmd := exec.CommandContext(ctx, baseCommand[0], baseCommand[1:]...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err = cmd.Run()
@@ -102,8 +102,12 @@ func migrateDatabase(ctx context.Context, uri string, baseline string) error {
 			}
 		}
 
+		if baseline == "" {
+			return fmt.Errorf("failed to run atlas migrate: %w", err)
+		}
+
 		//nolint:gosec // false positive for G204
-		cmd = exec.Command(baseCommand[0], append(baseCommand[1:], "--baseline", baseline)...)
+		cmd = exec.CommandContext(ctx, baseCommand[0], append(baseCommand[1:], "--baseline", baseline)...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
