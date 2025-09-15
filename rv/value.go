@@ -41,7 +41,7 @@ func WithDefaultExpiration(duration time.Duration) Option {
 	}
 }
 
-func (r *Value[T]) Set(ctx context.Context, key string, value T) error {
+func (r *Value[T]) Set(ctx context.Context, key string, value *T) error {
 	encoded, err := cbor.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("failed to encode value: %w", err)
