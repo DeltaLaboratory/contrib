@@ -4,17 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/redis/rueidis"
 )
 
+var ErrKeyLocked = errors.New("key is locked")
+
 type Value[T any] struct {
 	client rueidis.Client
 	key    string
 
 	config valueConfig
+
+	lockedKeys map[string]struct{}
+	mu         sync.RWMutex
 }
 
 type valueConfig struct {
@@ -24,7 +30,11 @@ type valueConfig struct {
 type Option func(*valueConfig)
 
 func NewValue[T any](client rueidis.Client, key string, options ...Option) *Value[T] {
-	r := &Value[T]{client: client, key: key}
+	r := &Value[T]{
+		client:     client,
+		key:        key,
+		lockedKeys: make(map[string]struct{}),
+	}
 
 	if len(options) > 0 {
 		for _, opt := range options {
@@ -41,7 +51,30 @@ func WithDefaultExpiration(duration time.Duration) Option {
 	}
 }
 
+func (r *Value[T]) Lock(key string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.lockedKeys[key] = struct{}{}
+}
+
+func (r *Value[T]) Unlock(key string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.lockedKeys, key)
+}
+
+func (r *Value[T]) IsLocked(key string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, locked := r.lockedKeys[key]
+	return locked
+}
+
 func (r *Value[T]) Set(ctx context.Context, key string, value *T) error {
+	if r.IsLocked(key) {
+		return ErrKeyLocked
+	}
+
 	encoded, err := cbor.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("failed to encode value: %w", err)
@@ -85,6 +118,10 @@ func (r *Value[T]) Get(ctx context.Context, key string) (*T, error) {
 }
 
 func (r *Value[T]) Delete(ctx context.Context, key string) error {
+	if r.IsLocked(key) {
+		return ErrKeyLocked
+	}
+
 	err := r.client.Do(ctx, r.client.B().Del().Key(r.key+":"+key).Build()).Error()
 	if err != nil {
 		return fmt.Errorf("failed to delete value: %w", err)
