@@ -2,6 +2,7 @@ package rv
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"testing"
@@ -160,7 +161,7 @@ func TestValueGetReturnsDecodedValue(t *testing.T) {
 	}
 }
 
-func TestValueGetReturnsNilWhenMissing(t *testing.T) {
+func TestValueGetReturnsErrorWhenMissing(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -175,8 +176,11 @@ func TestValueGetReturnsNilWhenMissing(t *testing.T) {
 		Return(rueidismock.Result(rueidismock.RedisNil()))
 
 	result, err := value.Get(ctx, "key")
-	if err != nil {
-		t.Fatalf("Get returned error: %v", err)
+	if err == nil {
+		t.Fatalf("expected error for missing key")
+	}
+	if !errors.Is(err, rueidis.Nil) {
+		t.Fatalf("expected redis nil error, got %v", err)
 	}
 	if result != nil {
 		t.Fatalf("expected nil result, got %#v", result)

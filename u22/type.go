@@ -1,6 +1,10 @@
 package u22
 
-import "github.com/google/uuid"
+import (
+	"errors"
+
+	"github.com/google/uuid"
+)
 
 //nolint:recvcheck // JSON Marshal/Unmarshal
 type EncodedID uuid.UUID
@@ -18,10 +22,10 @@ func (e EncodedID) MarshalJSON() ([]byte, error) {
 //goland:noinspection GoMixedReceiverTypes
 func (e *EncodedID) UnmarshalJSON(data []byte) error {
 	if len(data) < 2 {
-		return nil
+		return errors.New("data too short")
 	}
 	if data[0] != '"' || data[len(data)-1] != '"' {
-		return nil
+		return errors.New("invalid JSON string")
 	}
 	id, err := Decode(string(data[1 : len(data)-1]))
 	if err != nil {

@@ -116,13 +116,10 @@ func (r *Value[T]) Set(ctx context.Context, key string, value *T, setOptions ...
 	return nil
 }
 
-// Get loads a value by key; it returns nil when the key does not exist.
+// Get loads a value by key.
 func (r *Value[T]) Get(ctx context.Context, key string) (*T, error) {
 	resp, err := r.client.Do(ctx, r.client.B().Get().Key(r.key+":"+key).Build()).AsBytes()
 	if err != nil {
-		if errors.Is(err, rueidis.Nil) {
-			return nil, nil // Key does not exist
-		}
 		return nil, fmt.Errorf("failed to get value: %w", err)
 	}
 

@@ -90,12 +90,12 @@ func TestEncodedIDUnmarshalJSON(t *testing.T) {
 		{
 			name:    "invalid JSON",
 			input:   `invalid`,
-			wantErr: false,
+			wantErr: true,
 		},
 		{
 			name:    "missing quotes",
 			input:   `abcd`,
-			wantErr: false,
+			wantErr: true,
 		},
 		{
 			name:    "invalid encoded string",

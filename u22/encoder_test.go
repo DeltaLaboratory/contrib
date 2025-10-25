@@ -33,8 +33,8 @@ func TestEncodeDecode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			encoded := Encode(tt.uuid)
-			if len(encoded) != base6Length {
-				t.Errorf("encoded length = %d, want %d", len(encoded), base6Length)
+			if len(encoded) != encodeLength {
+				t.Errorf("encoded length = %d, want %d", len(encoded), encodeLength)
 			}
 
 			decoded, err := Decode(encoded)
@@ -45,6 +45,52 @@ func TestEncodeDecode(t *testing.T) {
 
 			if decoded != tt.uuid {
 				t.Errorf("Decode(Encode(%v)) = %v, want %v", tt.uuid, decoded, tt.uuid)
+			}
+		})
+	}
+}
+
+func TestEncodeDecodeKnownValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		uuid    uuid.UUID
+		encoded string
+	}{
+		{
+			name:    "nil UUID",
+			uuid:    uuid.Nil,
+			encoded: "aaaaaaaaaaaaaaaaaaaaaa",
+		},
+		{
+			name:    "max UUID",
+			uuid:    uuid.Max,
+			encoded: "d---------------------",
+		},
+		{
+			name:    "random UUID 1",
+			uuid:    uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
+			encoded: "aaaervzKqwP9rbM_iaHa5v",
+		},
+		{
+			name:    "random UUID 2",
+			uuid:    uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8"),
+			encoded: "dimnrpWac0GnerRz0qUkDR",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Encode(tt.uuid); got != tt.encoded {
+				t.Fatalf("Encode(%v) = %s, want %s", tt.uuid, got, tt.encoded)
+			}
+
+			decoded, err := Decode(tt.encoded)
+			if err != nil {
+				t.Fatalf("Decode(%s) error = %v", tt.encoded, err)
+			}
+
+			if decoded != tt.uuid {
+				t.Fatalf("Decode(%s) = %v, want %v", tt.encoded, decoded, tt.uuid)
 			}
 		})
 	}
@@ -83,22 +129,22 @@ func TestDecodeInvalidInput(t *testing.T) {
 		},
 		{
 			name:    "too long",
-			input:   strings.Repeat("a", base6Length+1),
+			input:   strings.Repeat("a", encodeLength+1),
 			wantErr: true,
 		},
 		{
 			name:    "invalid character",
-			input:   "invalid!" + strings.Repeat("a", base6Length-8),
+			input:   "invalid!" + strings.Repeat("a", encodeLength-8),
 			wantErr: true,
 		},
 		{
 			name:    "space character",
-			input:   " " + strings.Repeat("a", base6Length-1),
+			input:   " " + strings.Repeat("a", encodeLength-1),
 			wantErr: true,
 		},
 		{
 			name:    "valid charset characters",
-			input:   strings.Repeat("a", base6Length),
+			input:   strings.Repeat("a", encodeLength),
 			wantErr: false,
 		},
 	}
