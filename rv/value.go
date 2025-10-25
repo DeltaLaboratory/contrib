@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime"
 	"strings"
 	"time"
 
@@ -23,41 +22,20 @@ type Value[T any] struct {
 }
 
 type valueConfig struct {
-	expires         *time.Duration
-	lockKeyMajority int32
+	expires *time.Duration
 }
 
 type Option func(*valueConfig)
 
 // NewValue instantiates a Value helper for the provided key prefix and client options.
-func NewValue[T any](clientOption rueidis.ClientOption, key string, options ...Option) *Value[T] {
-	client, err := rueidis.NewClient(clientOption)
-	if err != nil {
-		panic(fmt.Errorf("failed to create redis client: %w", err))
-	}
-
-	r := &Value[T]{key: key, client: client}
+func NewValue[T any](client rueidis.Client, locker rueidislock.Locker, key string, options ...Option) *Value[T] {
+	r := &Value[T]{key: key, client: client, locker: locker}
 
 	if len(options) > 0 {
 		for _, opt := range options {
 			opt(&r.config)
 		}
 	}
-
-	locker, err := rueidislock.NewLocker(rueidislock.LockerOption{
-		ClientOption:   clientOption,
-		NoLoopTracking: true,
-
-		KeyMajority: r.config.lockKeyMajority,
-	})
-	if err != nil {
-		panic(fmt.Errorf("failed to create redis locker: %w", err))
-	}
-
-	r.locker = locker
-
-	runtime.AddCleanup(r, func(locker rueidislock.Locker) { locker.Close() }, r.locker)
-	runtime.AddCleanup(r, func(client rueidis.Client) { client.Close() }, r.client)
 
 	return r
 }
@@ -69,10 +47,22 @@ func WithDefaultExpiration(duration time.Duration) Option {
 	}
 }
 
-// WithKeyMajority customizes the distributed lock key-majority quorum.
-func WithKeyMajority(n int32) Option {
-	return func(r *valueConfig) {
-		r.lockKeyMajority = n
+type setOption struct {
+	TTL     *time.Duration
+	KeepTTL *bool
+}
+
+type SetOption func(*setOption)
+
+func SetTTL(duration time.Duration) SetOption {
+	return func(o *setOption) {
+		o.TTL = &duration
+	}
+}
+
+func SetKeepTTL(keep bool) SetOption {
+	return func(o *setOption) {
+		o.KeepTTL = &keep
 	}
 }
 
@@ -89,7 +79,7 @@ func (r *Value[T]) WithLock(ctx context.Context, key string, fn func(ctx context
 }
 
 // Set encodes and stores the provided value under the namespaced key.
-func (r *Value[T]) Set(ctx context.Context, key string, value *T) error {
+func (r *Value[T]) Set(ctx context.Context, key string, value *T, setOptions ...SetOption) error {
 	encoded, err := cbor.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("failed to encode value: %w", err)
@@ -97,7 +87,24 @@ func (r *Value[T]) Set(ctx context.Context, key string, value *T) error {
 
 	builder := r.client.B().Set().Key(r.key + ":" + key).Value(rueidis.BinaryString(encoded))
 
-	if r.config.expires != nil {
+	var options setOption
+	for _, opt := range setOptions {
+		opt(&options)
+	}
+
+	hasTTL := options.TTL != nil
+	hasKeepTTL := options.KeepTTL != nil && *options.KeepTTL
+	hasDefaultTTL := r.config.expires != nil
+
+	if hasTTL && hasKeepTTL {
+		return errors.New("cannot use SetTTL and SetKeepTTL simultaneously")
+	}
+
+	if hasTTL {
+		builder.Ex(*options.TTL)
+	} else if hasKeepTTL {
+		builder.Keepttl()
+	} else if hasDefaultTTL {
 		builder.Ex(*r.config.expires)
 	}
 
@@ -117,10 +124,6 @@ func (r *Value[T]) Get(ctx context.Context, key string) (*T, error) {
 			return nil, nil // Key does not exist
 		}
 		return nil, fmt.Errorf("failed to get value: %w", err)
-	}
-
-	if resp == nil {
-		return nil, errors.New("value not found")
 	}
 
 	return r.decodeValue(resp)
